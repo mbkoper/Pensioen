@@ -244,6 +244,30 @@
         </div>
     </fieldset>
 
+    <fieldset class="mb-3 p-3 bg-body-tertiary rounded border">
+        <legend class="fs-6 fw-bold mb-2">Geavanceerde opties</legend>
+        <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" id="switchCostPrice"
+                   :checked="inputs.useCostPrice"
+                   @change="emitInput('useCostPrice', $event.target.checked)"
+                   style="width:2.5em;height:1.25em;cursor:pointer;">
+            <label class="form-check-label fw-semibold" for="switchCostPrice">
+                Kostprijs of lagere marktwaarde
+            </label>
+            <div class="form-text" style="font-size:0.7em;line-height:1.2;">VPB alleen betalen bij opname, niet jaarlijks over ongerealiseerde beleggingswinst.</div>
+        </div>
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="switchSorRisk"
+                   :checked="inputs.sorRisk"
+                   @change="emitInput('sorRisk', $event.target.checked)"
+                   style="width:2.5em;height:1.25em;cursor:pointer;">
+            <label class="form-check-label fw-semibold" for="switchSorRisk">
+                Sequence of Returns Risk
+            </label>
+            <div class="form-text" style="font-size:0.7em;line-height:1.2;">Herrangschikt de rendementscyclus zodat negatieve jaren als eerste komen (slechtste volgorde).</div>
+        </div>
+    </fieldset>
+
     <div class="row g-2">
         <div class="col-6" v-for="field in fields" :key="field.key">
             <label class="form-label fw-semibold small mb-0">{{ field.label }}</label>
@@ -312,7 +336,8 @@ createApp({
       inputs:{
         isOpIsOp:true,manualNetMonth:null,birthDate:'',stopDate:'',
         aowAge:67.25,startCapital:null,targetBuffer:null,minNetBase:null,
-        inflation:null,aowBase:null,targetAge:null
+        inflation:null,aowBase:null,targetAge:null,
+        useCostPrice:false,sorRisk:false
       },
       extraExpenses:{},
       selectedPreset:'msci',
@@ -405,7 +430,7 @@ createApp({
       };
     },
     resetData(){
-      this.inputs={isOpIsOp:true,manualNetMonth:null,birthDate:'',stopDate:'',aowAge:67.25,startCapital:null,targetBuffer:null,minNetBase:null,inflation:null,aowBase:null,targetAge:null};
+      this.inputs={isOpIsOp:true,manualNetMonth:null,birthDate:'',stopDate:'',aowAge:67.25,startCapital:null,targetBuffer:null,minNetBase:null,inflation:null,aowBase:null,targetAge:null,useCostPrice:false,sorRisk:false};
       this.extraExpenses={};
     },
     triggerFileSelect(){document.getElementById('fileImport')?.click();},
@@ -436,6 +461,9 @@ createApp({
     clearExtraExpenses(){this.extraExpenses={};},
     runSim(testNet,startYear,birthYear,retireYear,aowAge,inflRate){
       const inp=this.inputs;
+      const effectiveCycle=inp.sorRisk
+        ?[...this.returnCycle].sort((a,b)=>a-b)
+        :this.returnCycle;
       let belegd=inp.startCapital-inp.targetBuffer;
       let cash=inp.targetBuffer;
       let year=startYear;
@@ -453,7 +481,7 @@ createApp({
         const hasAow=age>=aowAge;
         const phase=isAccum?'Opbouw':(hasAow?'Pensioen':'Pre-pensioen');
         const idx=(year-startYear)%10;
-        const returnRate=(parseFloat(this.returnCycle[idx])||0)/100;
+        const returnRate=(parseFloat(effectiveCycle[idx])||0)/100;
         const isBad=returnRate<0;
         const inflFactor=Math.pow(1+inflRate,year-startYear);
 
@@ -478,7 +506,7 @@ createApp({
         belegd+=rendement;
 
         let vpb=0;
-        if(!isBad&&rendement>0){
+        if(!isBad&&rendement>0&&!inp.useCostPrice){
           vpb=calcVpb(rendement);
           belegd-=vpb;
         }
