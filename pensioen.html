@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang=nl data-bs-theme=light>
+<head>
+<meta charset=UTF-8>
+<meta name=viewport content="width=device-width, initial-scale=1.0">
+<title>FIRE BV Pensioensimulator</title>
+<link href=https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css rel=stylesheet>
+<link href=https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css rel=stylesheet>
+<script src=https://unpkg.com/vue@3/dist/vue.global.prod.js></script>
+<script src=https://cdn.jsdelivr.net/npm/chart.js></script>
+<script src=https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js></script>
+<style>:root{--phase-accumulation:#6c757d;--phase-pre:#0d6efd;--phase-pension:#18bc9c;--bad-bg:#fff5f5;--good-bg:#f0fdf4}[data-bs-theme="dark"]{--bad-bg:#2c1a1a;--good-bg:#1a2c1a}body{background:var(--bs-body-bg);transition:background .3s}.row-accumulation{border-left:4px solid var(--phase-accumulation)!important}.row-preretirement{border-left:4px solid var(--phase-pre)!important;background-color:rgba(13,110,253,0.04)!important}.row-retirement{border-left:4px solid var(--phase-pension)!important}.row-bad{background-color:var(--bad-bg)!important}.row-good{background-color:var(--good-bg)!important}.chart-container{position:relative;height:320px;width:100%}.sticky-result{position:sticky;top:0;z-index:100}.sim-table{font-size:.82rem}.sim-table th,.sim-table td{white-space:nowrap;padding:.35rem .5rem;vertical-align:middle}.sim-table .table-input{max-width:85px;width:100%;text-align:right;border:1px solid var(--bs-border-color);border-radius:4px;padding:3px 6px;font-size:.82rem;background:var(--bs-body-bg);color:var(--bs-body-color)}.sim-table .table-input:focus{outline:0;border-color:var(--phase-pension);box-shadow:0 0 0 .15rem rgba(24,188,156,0.25)}.return-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}.result-metric{flex:1;padding:12px;border-radius:8px;background:var(--bs-tertiary-bg)}.result-label{font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;color:var(--bs-secondary-color);font-weight:700;margin-bottom:2px}.result-value{font-size:1.8rem;font-weight:800;line-height:1.1}.result-unit{font-size:.4em;color:var(--bs-secondary-color);vertical-align:middle}.timeline-progress{height:6px;border-radius:3px;overflow:hidden;background:var(--bs-secondary-bg)}.timeline-progress-bar{height:100%;border-radius:3px;transition:width .4s ease}.waiting-state{min-height:400px;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--bs-secondary-color);text-align:center}@media(max-width:991.98px){.settings-desktop{display:none!important}.sim-table{font-size:.75rem}.sim-table th,.sim-table td{padding:.25rem .35rem}.sim-table .table-input{max-width:70px;font-size:.75rem}.result-value{font-size:1.4rem}}@media(min-width:992px){.settings-mobile-toggle{display:none!important}}[v-cloak]{display:none}</style>
+</head>
+<body>
+<div id=app v-cloak>
+<nav class="navbar navbar-expand-lg sticky-top bg-body-tertiary border-bottom shadow-sm">
+<div class=container>
+<span class="navbar-brand fw-bold text-primary">
+<i class="bi bi-graph-up-arrow me-1"></i> FIRE Simulator
+</span>
+<div class="d-flex align-items-center gap-2">
+<button class="btn btn-sm btn-outline-primary settings-mobile-toggle" data-bs-toggle=offcanvas data-bs-target=#settingsDrawer aria-label="Instellingen openen">
+<i class="bi bi-sliders"></i> Instellingen
+</button>
+<button class="btn btn-sm btn-outline-secondary" @click=triggerFileSelect title="Importeer JSON">
+<i class="bi bi-folder2-open"></i><span class="d-none d-md-inline ms-1">Import</span>
+</button>
+<button class="btn btn-sm btn-primary" @click=exportData :disabled=sim.waitingForInput title="Exporteer JSON">
+<i class="bi bi-download"></i><span class="d-none d-md-inline ms-1">Export</span>
+</button>
+<button class="btn btn-sm btn-outline-secondary" @click=toggleTheme :title="isDark ? 'Licht thema' : 'Donker thema'">
+<i :class="isDark ? 'bi bi-sun-fill' : 'bi bi-moon-fill'"></i>
+</button>
+<input type=file id=fileImport class=d-none accept=.json @change=importData>
+</div>
+</div>
+</nav>
+<div class="container py-3">
+<div class="row g-3">
+<div class="col-lg-4 settings-desktop">
+<div class="card shadow-sm border-0 h-100">
+<div class="card-header bg-primary text-white fw-bold py-2">
+<i class="bi bi-sliders me-1"></i> Variabelen
+</div>
+<div class="card-body bg-body">
+<settings-form :inputs=inputs :return-cycle=returnCycle :selected-preset=selectedPreset :presets=presets :average-return=averageReturn @update:inputs="inputs = $event" @update:return-cycle="returnCycle = $event" @update:selected-preset=applyPreset($event) @reset=resetData>
+</settings-form>
+</div>
+</div>
+</div>
+<div class="offcanvas offcanvas-start" tabindex=-1 id=settingsDrawer>
+<div class="offcanvas-header bg-primary text-white">
+<h5 class=offcanvas-title><i class="bi bi-sliders me-1"></i> Variabelen</h5>
+<button type=button class="btn-close btn-close-white" data-bs-dismiss=offcanvas aria-label=Sluiten></button>
+</div>
+<div class=offcanvas-body>
+<settings-form :inputs=inputs :return-cycle=returnCycle :selected-preset=selectedPreset :presets=presets :average-return=averageReturn @update:inputs="inputs = $event" @update:return-cycle="returnCycle = $event" @update:selected-preset=applyPreset($event) @reset=resetData>
+</settings-form>
+</div>
+</div>
+<div class=col-lg-8>
+<div v-if=sim.waitingForInput class="card shadow-sm border-0 h-100">
+<div class="card-body waiting-state">
+<i class="bi bi-rocket-takeoff text-primary" style=font-size:3rem></i>
+<h3 class="text-primary mb-2 mt-3">Welkom</h3>
+<p class="text-secondary mb-4">Importeer een JSON bestand of vul je gegevens in om te starten.</p>
+<button class="btn btn-primary" @click=triggerFileSelect>
+<i class="bi bi-folder2-open me-1"></i> Importeer JSON
+</button>
+</div>
+</div>
+<template v-else>
+<div class="card shadow-sm border-2 mb-3 sticky-result" :class="sim.failed ? 'border-danger' : (bufferWarning ? 'border-warning' : 'border-success')">
+<div class="card-body p-3" :class="sim.failed ? 'bg-danger bg-opacity-10' : (bufferWarning ? 'bg-warning bg-opacity-10' : 'bg-success bg-opacity-10')">
+<div class="d-flex gap-2 flex-wrap mb-2">
+<div class="result-metric text-center flex-fill">
+<div class=result-label>{{ inputs.isOpIsOp ? 'Max. Netto' : 'Ingesteld' }}</div>
+<div class=result-value :class="sim.failed ? 'text-danger' : 'text-primary'">
+{{ formatEur(sim.activeNetMonth) }}<span class=result-unit>/mnd</span>
+</div>
+</div>
+<div class="result-metric text-center flex-fill">
+<div class=result-label>Eindvermogen ({{ inputs.targetAge }}j)</div>
+<div class=result-value :class="sim.failed ? 'text-danger' : 'text-success'">
+{{ formatEur(sim.finalCapital) }}
+</div>
+</div>
+<div class="result-metric text-center flex-fill">
+<div class=result-label>Laagste Buffer</div>
+<div class=result-value :class="bufferWarning ? 'text-warning' : 'text-body'">
+{{ formatEur(sim.minBuffer) }}
+</div>
+<div v-if=bufferWarning style=font-size:0.7em class="text-warning fw-bold mt-1">
+<i class="bi bi-exclamation-triangle-fill me-1"></i>Buffer ontoereikend
+</div>
+</div>
+</div>
+<div class="timeline-progress mb-2">
+<div class=timeline-progress-bar :class="sim.failed ? 'bg-danger' : (bufferWarning ? 'bg-warning' : 'bg-success')" :style="{ width: timelineProgress + '%' }">
+</div>
+</div>
+<div class=text-center>
+<small v-if=sim.failed class="text-danger fw-bold">
+<i class="bi bi-exclamation-triangle-fill me-1"></i>Vermogen raakt op bij leeftijd {{ sim.failedAtAge }} (doel: {{ inputs.targetAge }})!
+</small>
+<small v-else-if=bufferWarning class="text-warning fw-bold">
+<i class="bi bi-exclamation-triangle-fill me-1"></i>Plan haalbaar, maar buffer raakt leeg in {{ sim.bufferEmptyYear }}
+</small>
+<small v-else class="text-success fw-bold">
+<i class="bi bi-check-circle-fill me-1"></i>Plan veilig tot {{ inputs.targetAge }} jaar
+</small>
+</div>
+</div>
+</div>
+<div class="card shadow-sm border-0 mb-3">
+<div class="card-header bg-body-tertiary fw-semibold border-0 py-2 d-flex justify-content-between align-items-center">
+<span><i class="bi bi-bar-chart-line me-1"></i> Vermogensverloop</span>
+<div class="btn-group btn-group-sm">
+<button class="btn btn-outline-secondary" :class="{ active: chartMode === 'total' }" @click="chartMode = 'total'">Totaal</button>
+<button class="btn btn-outline-secondary" :class="{ active: chartMode === 'split' }" @click="chartMode = 'split'">Belegd / Buffer</button>
+</div>
+</div>
+<div class="card-body pt-2">
+<div class=chart-container>
+<canvas id=wealthChart></canvas>
+</div>
+</div>
+</div>
+<div class="card shadow-sm border-0">
+<div class="card-header bg-dark text-white fw-bold py-2 d-flex justify-content-between align-items-center">
+<span><i class="bi bi-table me-1"></i> Verloop per Fase</span>
+<button class="btn btn-sm btn-outline-light" @click=clearExtraExpenses>
+<i class="bi bi-eraser me-1"></i>Wis Extra
+</button>
+</div>
+<div class="card-body p-0 table-responsive">
+<table class="table table-hover mb-0 sim-table">
+<thead class=table-light>
+<tr>
+<th>Jaar</th>
+<th>Fase</th>
+<th>Beurs</th>
+<th>Netto p/m</th>
+<th>Extra</th>
+<th>Bruto</th>
+<th>VPB</th>
+<th>Buffer</th>
+<th class=text-end>Totaal</th>
+</tr>
+</thead>
+<tbody>
+<tr v-for="row in sim.rows" :key=row.year :class=rowClass(row)>
+<td>
+<strong>{{ row.year }}</strong>
+<span class=text-body-secondary>({{ row.age }})</span>
+</td>
+<td>
+<span v-if="row.phase === 'Opbouw'" class="badge bg-secondary">Opbouw</span>
+<span v-else-if="row.phase === 'Pre-pensioen'" class="badge bg-info text-dark">Pre</span>
+<span v-else class="badge bg-primary">Pensioen</span>
+</td>
+<td :class="row.returnRate < 0 ? 'text-danger fw-bold' : 'text-success fw-bold'">
+{{ row.returnRate > 0 ? '+' : '' }}{{ (row.returnRate * 100).toFixed(1) }}%
+</td>
+<td>
+<template v-if="row.phase === 'Opbouw'">
+<span class=text-body-secondary>—</span>
+</template>
+<template v-else>
+<strong>{{ formatEur(row.desiredNetMonth) }}</strong>
+<br><span class=text-body-secondary style=font-size:0.7em>{{ row.isBadYear ? 'bodem' : 'basis' }}</span>
+</template>
+</td>
+<td>
+<input type=number class=table-input v-model.number=extraExpenses[row.year] placeholder=0 step=1000 :aria-label="'Extra uitgave jaar ' + row.year">
+</td>
+<td class="text-primary fw-bold">{{ formatEur(row.grossNeeded) }}</td>
+<td>{{ formatEur(row.vpb) }}</td>
+<td>
+<strong>{{ formatEur(row.cash) }}</strong>
+<span v-if="row.cash === 0" class="badge bg-danger ms-1">!</span>
+</td>
+<td class="text-end fw-bold">{{ formatEur(row.totalEnd) }}</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</template>
+</div>
+</div>
+</div>
+</div>
+<script type=text/x-template id=settings-form-template>
+<form @submit.prevent>
+
+    <fieldset class="mb-3 p-3 bg-body-tertiary rounded border">
+        <div class="form-check form-switch mb-1">
+            <input class="form-check-input" type="checkbox" id="switchOpIsOp"
+                   :checked="inputs.isOpIsOp"
+                   @change="emitInput('isOpIsOp', $event.target.checked)"
+                   style="width:2.5em;height:1.25em;cursor:pointer;">
+            <label class="form-check-label fw-bold text-primary" for="switchOpIsOp">
+                Op = Op (Die With Zero)
+            </label>
+        </div>
+        <small class="text-body-secondary" v-if="inputs.isOpIsOp">
+            Zoekt automatisch het <strong>maximale</strong> maandbedrag om op de eindleeftijd op €0 te eindigen.
+        </small>
+        <small class="text-body-secondary" v-else>
+            Stel je eigen gewenste basisuitgaven in:
+        </small>
+        <div class="mt-2" v-if="!inputs.isOpIsOp">
+            <label class="form-label fw-semibold text-success small mb-1">Gewenste Basis Netto p/m (€)</label>
+            <input type="number" class="form-control form-control-sm border-success"
+                   :value="inputs.manualNetMonth"
+                   @input="emitInput('manualNetMonth', Number($event.target.value))"
+                   step="500" placeholder="Bijv. 8000">
+        </div>
+    </fieldset>
+
+    <fieldset class="mb-3 p-3 rounded" style="background:rgba(13,110,253,0.06);border:1px solid rgba(13,110,253,0.2);">
+        <legend class="fs-6 fw-bold text-primary mb-2">Beurs Rendementen (%)</legend>
+        <select class="form-select form-select-sm mb-2 border-primary"
+                :value="selectedPreset"
+                @change="$emit('update:selectedPreset', $event.target.value)">
+            <option value="msci">MSCI World (10j proxy)</option>
+            <option value="dow">Dow Jones / S&P 500</option>
+            <option value="europe">Europa (AEX/STOXX)</option>
+            <option value="stable">Stabiel (6%)</option>
+        </select>
+        <div class="return-grid">
+            <div v-for="(val, i) in returnCycle" :key="i" class="input-group input-group-sm">
+                <span class="input-group-text bg-body py-0 px-2" style="font-size:0.8em">J{{i+1}}</span>
+                <input type="number" class="form-control text-end py-0"
+                       :value="returnCycle[i]" step="0.1"
+                       :disabled="selectedPreset === 'stable' && i > 0"
+                       @input="emitReturn(i, Number($event.target.value))"
+                       :aria-label="'Rendement jaar ' + (i+1)">
+            </div>
+        </div>
+        <div class="mt-1 fw-bold text-primary" style="font-size:0.8em">
+            Gemiddeld: {{ averageReturn }}%
+        </div>
+    </fieldset>
+
+    <div class="row g-2">
+        <div class="col-6" v-for="field in fields" :key="field.key">
+            <label class="form-label fw-semibold small mb-0">{{ field.label }}</label>
+            <input :type="field.type || 'number'"
+                   class="form-control form-control-sm"
+                   :value="inputs[field.key]"
+                   @input="emitInput(field.key, field.type === 'date' ? $event.target.value : Number($event.target.value))"
+                   :step="field.step || 1"
+                   :placeholder="field.placeholder || ''">
+            <div v-if="field.hint" class="form-text" style="font-size:0.7em;line-height:1.2;">{{ field.hint }}</div>
+        </div>
+    </div>
+
+    <button class="btn btn-sm btn-outline-danger w-100 mt-3" @click="$emit('reset')">
+        <i class="bi bi-trash me-1"></i>Wis alle velden
+    </button>
+</form>
+</script>
+<script src=https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js></script>
+<script>
+const{createApp,markRaw}=Vue;
+const TAX=Object.freeze({IB_LOW_RATE:0.245,IB_HIGH_RATE:0.33,IB_BRACKET:67000,VPB_LOW_RATE:0.19,VPB_HIGH_RATE:0.258,VPB_BRACKET:200000,});
+const EUR=new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+function grossFromNet(netYear){if(netYear<=0)return 0;const bracketNet=TAX.IB_BRACKET*(1-TAX.IB_LOW_RATE);if(netYear<=bracketNet)return netYear/(1-TAX.IB_LOW_RATE);return TAX.IB_BRACKET+(netYear-bracketNet)/(1-TAX.IB_HIGH_RATE);}
+function calcVpb(profit){if(profit<=0)return 0;const low=Math.min(profit,TAX.VPB_BRACKET);const high=Math.max(0,profit-TAX.VPB_BRACKET);return low*TAX.VPB_LOW_RATE+high*TAX.VPB_HIGH_RATE;}
+
+const SettingsForm={
+  template:'#settings-form-template',
+  props:['inputs','returnCycle','selectedPreset','presets','averageReturn'],
+  emits:['update:inputs','update:returnCycle','update:selectedPreset','reset'],
+  data(){
+    return{fields:[
+      {key:'birthDate',label:'Geboortedatum',type:'date'},
+      {key:'stopDate',label:'Stopdatum (pre-pensioen)',type:'date'},
+      {key:'aowAge',label:'AOW Leeftijd',step:0.01,placeholder:'67.25',hint:'67 jaar 3 mnd = 67.25'},
+      {key:'targetAge',label:'Doel Leeftijd',placeholder:'90'},
+      {key:'startCapital',label:'Investeringen BV (€)',step:50000,placeholder:'Waarde vandaag'},
+      {key:'targetBuffer',label:'Cash Buffer BV (€)',step:10000,placeholder:'200000'},
+      {key:'minNetBase',label:'Min. Netto p/m crisis (€)',step:100,placeholder:'4000'},
+      {key:'aowBase',label:'AOW Netto p/m (€)',step:50,placeholder:'Waarde vandaag'},
+      {key:'inflation',label:'Inflatie (%)',step:0.1,placeholder:'2.0'},
+    ]};
+  },
+  methods:{
+    emitInput(key,value){
+      this.$emit('update:inputs',{...this.inputs,[key]:value});
+    },
+    emitReturn(index,value){
+      const copy=[...this.returnCycle];
+      copy[index]=value;
+      if(this.selectedPreset==='stable' && index===0){
+        for(let i=1;i<copy.length;i++)copy[i]=value;
+      }
+      this.$emit('update:returnCycle',copy);
+    }
+  }
+};
+
+createApp({
+  components:{SettingsForm},
+  data(){
+    return{
+      isDark:false,
+      chartMode:'total',
+      chartInstance:null,
+      inputs:{
+        isOpIsOp:true,manualNetMonth:null,birthDate:'',stopDate:'',
+        aowAge:67.25,startCapital:null,targetBuffer:null,minNetBase:null,
+        inflation:null,aowBase:null,targetAge:null
+      },
+      extraExpenses:{},
+      selectedPreset:'msci',
+      returnCycle:[11,8,-4,30,6,31,-13,20,24,5],
+      presets:{
+        msci:[11,8,-4,30,6,31,-13,20,24,5],
+        dow:[14,-4,31,18,28,-18,26,16,-5,24],
+        europe:[4,8,-10,24,-5,22,-14,14,18,8],
+        stable:[6,6,6,6,6,6,6,6,6,6]
+      }
+    };
+  },
+  computed:{
+    averageReturn(){
+      const sum=this.returnCycle.reduce((a,v)=>a+(parseFloat(v)||0),0);
+      return(sum/this.returnCycle.length).toFixed(1);
+    },
+    sim(){
+      const inp=this.inputs;
+      if(
+        !inp.birthDate||!inp.stopDate||
+        [inp.startCapital,inp.targetAge,inp.aowAge,inp.targetBuffer,inp.minNetBase,inp.inflation,inp.aowBase].some(v=>v===null||v==='')||
+        (!inp.isOpIsOp&&(inp.manualNetMonth===null||inp.manualNetMonth===''))
+      ){
+        return{activeNetMonth:0,rows:[],failed:false,failedAtAge:null,finalCapital:0,minBuffer:0,bufferEmptyYear:null,waitingForInput:true};
+      }
+      const startYear=dayjs().year();
+      const birthYear=dayjs(inp.birthDate).year();
+      const retireYear=dayjs(inp.stopDate).year();
+      const aowAge=parseFloat(inp.aowAge);
+      const inflRate=parseFloat(inp.inflation)/100;
+
+      if(inp.isOpIsOp){
+        let lo=inp.minNetBase,hi=60000,best={};
+        for(let i=0;i<50&&(hi-lo)>=1;i++){
+          const mid=(lo+hi)/2;
+          const res=this.runSim(mid,startYear,birthYear,retireYear,aowAge,inflRate);
+          if(res.finalCapital>0){lo=mid;best={...res,activeNetMonth:mid};}
+          else{hi=mid;best={...res,activeNetMonth:mid};}
+        }
+        best.waitingForInput=false;
+        if(best.activeNetMonth<=inp.minNetBase+1&&best.failed)best.failed=true;
+        return best;
+      }else{
+        const res=this.runSim(inp.manualNetMonth,startYear,birthYear,retireYear,aowAge,inflRate);
+        return{...res,activeNetMonth:inp.manualNetMonth,waitingForInput:false};
+      }
+    },
+    bufferWarning(){
+      return !this.sim.waitingForInput && !this.sim.failed && !this.inputs.isOpIsOp && this.sim.minBuffer===0;
+    },
+    timelineProgress(){
+      if(!this.sim.rows||this.sim.rows.length===0)return 100;
+      const alive=this.sim.rows.filter(r=>r.totalEnd>0).length;
+      return Math.round((alive/this.sim.rows.length)*100);
+    }
+  },
+  watch:{
+    sim(newSim){
+      if(newSim.rows&&newSim.rows.length){
+        this.$nextTick(()=>{
+          if(!this.chartInstance)this.initChart();
+          this.updateChart(newSim.rows);
+        });
+      }
+    },
+    chartMode(){
+      if(this.sim.rows&&this.sim.rows.length){
+        this.$nextTick(()=>this.updateChart(this.sim.rows));
+      }
+    }
+  },
+  methods:{
+    formatEur(v){return EUR.format(v||0);},
+    toggleTheme(){
+      this.isDark=!this.isDark;
+      document.documentElement.setAttribute('data-bs-theme',this.isDark?'dark':'light');
+    },
+    applyPreset(val){
+      this.selectedPreset=val;
+      this.returnCycle=[...this.presets[val]];
+    },
+    rowClass(row){
+      return{
+        'row-accumulation':row.phase==='Opbouw',
+        'row-preretirement':row.phase==='Pre-pensioen',
+        'row-retirement':row.phase==='Pensioen',
+        'row-bad':row.isBadYear&&row.phase!=='Opbouw',
+        'row-good':!row.isBadYear&&row.phase!=='Opbouw',
+      };
+    },
+    resetData(){
+      this.inputs={isOpIsOp:true,manualNetMonth:null,birthDate:'',stopDate:'',aowAge:67.25,startCapital:null,targetBuffer:null,minNetBase:null,inflation:null,aowBase:null,targetAge:null};
+      this.extraExpenses={};
+    },
+    triggerFileSelect(){document.getElementById('fileImport')?.click();},
+    exportData(){
+      const blob=new Blob([JSON.stringify({inputs:this.inputs,extraExpenses:this.extraExpenses,returnCycle:this.returnCycle,selectedPreset:this.selectedPreset},null,2)],{type:'application/json'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='pensioen_scenario.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    },
+    importData(e){
+      const file=e.target.files[0];
+      if(!file)return;
+      const reader=new FileReader();
+      reader.onload=(ev)=>{
+        try{
+          const d=JSON.parse(ev.target.result);
+          if(d.inputs)this.inputs={...this.inputs,...d.inputs};
+          if(d.extraExpenses)this.extraExpenses=d.extraExpenses;
+          if(d.returnCycle)this.returnCycle=d.returnCycle;
+          if(d.selectedPreset)this.selectedPreset=d.selectedPreset;
+        }catch{alert('Fout bij inlezen JSON bestand.');}
+        e.target.value='';
+      };
+      reader.readAsText(file);
+    },
+    clearExtraExpenses(){this.extraExpenses={};},
+    runSim(testNet,startYear,birthYear,retireYear,aowAge,inflRate){
+      const inp=this.inputs;
+      let belegd=inp.startCapital-inp.targetBuffer;
+      let cash=inp.targetBuffer;
+      let year=startYear;
+      const rows=[];
+      let failed=false;
+      let failedAtAge=null;
+      let minBuffer=cash;
+      let bufferEmptyYear=null;
+
+      while(true){
+        const age=year-birthYear;
+        if(age>inp.targetAge)break;
+
+        const isAccum=year<retireYear;
+        const hasAow=age>=aowAge;
+        const phase=isAccum?'Opbouw':(hasAow?'Pensioen':'Pre-pensioen');
+        const idx=(year-startYear)%10;
+        const returnRate=(parseFloat(this.returnCycle[idx])||0)/100;
+        const isBad=returnRate<0;
+        const inflFactor=Math.pow(1+inflRate,year-startYear);
+
+        let desiredNetMonth=0;
+        let netYear=0;
+
+        if(phase!=='Opbouw'){
+          const minNet=inp.minNetBase*inflFactor;
+          const maxNet=testNet*inflFactor;
+          desiredNetMonth=isBad?minNet:maxNet;
+          netYear=desiredNetMonth*12;
+          if(phase==='Pensioen'){
+            netYear=Math.max(0,netYear-inp.aowBase*inflFactor*12);
+          }
+        }
+
+        netYear+=(this.extraExpenses[year]||0);
+
+        const grossNeeded=grossFromNet(netYear);
+
+        const rendement=belegd*returnRate;
+        belegd+=rendement;
+
+        let vpb=0;
+        if(!isBad&&rendement>0){
+          vpb=calcVpb(rendement);
+          belegd-=vpb;
+        }
+
+        if(cash>=grossNeeded){
+          cash-=grossNeeded;
+        }else{
+          belegd-=(grossNeeded-cash);
+          cash=0;
+        }
+
+        if(!isBad&&cash<inp.targetBuffer){
+          const fill=Math.min(inp.targetBuffer-cash,Math.max(0,belegd));
+          belegd-=fill;
+          cash+=fill;
+        }
+
+        if(belegd<0)belegd=0;
+        if(cash<0)cash=0;
+
+        const totalEnd=belegd+cash;
+        if(totalEnd<=0&&age<inp.targetAge){
+          if(!failed){failedAtAge=age;}
+          failed=true;
+        }
+
+        if(cash<minBuffer)minBuffer=cash;
+        if(cash===0&&bufferEmptyYear===null)bufferEmptyYear=year;
+
+        rows.push({year,age,phase,isBadYear:isBad,returnRate,vpb,grossNeeded,cash,belegd,desiredNetMonth,totalEnd});
+        year++;
+      }
+
+      return{finalCapital:belegd+cash,rows,failed,failedAtAge,minBuffer,bufferEmptyYear};
+    },
+    initChart(){
+      const canvas=document.getElementById('wealthChart');
+      if(!canvas)return;
+      if(this.chartInstance)this.chartInstance.destroy();
+      this.chartInstance=markRaw(new Chart(canvas.getContext('2d'),{
+        type:'line',
+        data:{labels:[],datasets:[]},
+        options:{
+          responsive:true,
+          maintainAspectRatio:false,
+          interaction:{mode:'index',intersect:false},
+          scales:{y:{title:{display:true,text:'Vermogen (€)'},ticks:{callback:v=>EUR.format(v)}}},
+          plugins:{tooltip:{callbacks:{label:ctx=>(ctx.dataset.label||'')+': '+EUR.format(ctx.parsed.y)}}}
+        }
+      }));
+    },
+    updateChart(rows){
+      if(!this.chartInstance||!rows.length)return;
+      const labels=rows.map(r=>r.age);
+
+      let datasets;
+      if(this.chartMode==='split'){
+        datasets=[
+          {label:'Belegd',data:rows.map(r=>r.belegd),borderColor:'#18bc9c',backgroundColor:'rgba(24,188,156,0.15)',borderWidth:2,fill:true,tension:0.3},
+          {label:'Buffer',data:rows.map(r=>r.cash),borderColor:'#f39c12',backgroundColor:'rgba(243,156,18,0.15)',borderWidth:2,fill:true,tension:0}
+        ];
+      }else{
+        datasets=[
+          {label:'Totaal Vermogen BV',data:rows.map(r=>r.totalEnd),borderColor:'#18bc9c',backgroundColor:'rgba(24,188,156,0.1)',borderWidth:3,fill:true,tension:0.3},
+          {label:'Cash Buffer',data:rows.map(r=>r.cash),borderColor:'#f39c12',borderWidth:2,borderDash:[5,5],fill:false,tension:0}
+        ];
+      }
+
+      this.chartInstance.data={labels,datasets};
+      this.chartInstance.update();
+    }
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
