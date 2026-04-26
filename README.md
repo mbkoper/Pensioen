@@ -134,11 +134,11 @@ Jaar-voor-jaar overzicht met:
 
 | Bibliotheek | Versie | Doel |
 |---|---|---|
-| [Vue 3](https://vuejs.org/) | 3.x | Reactieve UI-logica |
-| [Bootstrap](https://getbootstrap.com/) | 5.3 | Layout, componenten, offcanvas |
-| [Bootstrap Icons](https://icons.getbootstrap.com/) | 1.11 | Icoonset |
-| [Chart.js](https://www.chartjs.org/) | Latest | Vermogensgrafiek |
-| [Day.js](https://day.js.org/) | 1.x | Datum-parsing |
+| [Vue 3](https://vuejs.org/) | 3 (unpkg CDN) | Reactieve UI-logica |
+| [Bootstrap](https://getbootstrap.com/) | 5.3.0 | Layout, componenten, offcanvas |
+| [Bootstrap Icons](https://icons.getbootstrap.com/) | 1.11.0 | Icoonset |
+| [Chart.js](https://www.chartjs.org/) | latest (jsDelivr CDN) | Vermogensgrafiek |
+| [Day.js](https://day.js.org/) | 1 (jsDelivr CDN) | Datum-parsing |
 
 ---
 
